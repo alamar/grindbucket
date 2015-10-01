@@ -1,0 +1,22 @@
+grindbucket MVP:
+
+- Store tsv
+- Store header: fields information, created/modified, comment.
+- Header replication
+- gzipped
+- Chunked
+- Basic operations: store, cat, list
+- Basic manipulations: sort by field, select by field value
+
+Next steps:
+
+- fix for different chunk size, field order
+- join sorted buckets
+- Niceties: sample
+- More metadata, store history
+
+Once we have interpretation:
+- query
+- map
+- zip-with & group-by
+
