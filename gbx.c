@@ -204,9 +204,9 @@ void probe_bucket(bucket_info *info, char *filename, arguments *args) {
     char *name = NULL;
     int64_t entries = 0;
     int64_t segments = 1;
-    int64_t segment_size = 0;
-    char *created;
-    char *comment;
+    int64_t segment_length = 0;
+    char *created = NULL;
+    char *comment = NULL;
     
     while (header) {
         char *value = header->string + 1; /* Skip heading # */
@@ -222,10 +222,50 @@ void probe_bucket(bucket_info *info, char *filename, arguments *args) {
                 name = extract_identifier(value + 6, "name", args);
             }
         }
+        if (strncmp("Created: ", value, 9) == 0) {
+            if (created != NULL) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: creation date-time specified more than once\n");
+                }
+            } else {
+                // XXX Add validation!
+                created = value + 9;
+            }
+        }
+        if (strncmp("Segments: ", value, 10) == 0) {
+            if (segments != 1) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: segments count specified more than once\n");
+                }
+            } else {
+                // XXX Add validation!
+                sscanf(value + 10, "%lld", &segments);
+            }
+        }
+        if (strncmp("Entries: ", value, 9) == 0) {
+            if (entries != 0) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: entries count specified more than once\n");
+                }
+            } else {
+                // XXX Add validation!
+                sscanf(value + 9, "%lld", &entries);
+            }
+        }
+        if (strncmp("Segment-Length: ", value, 16) == 0) {
+            if (segment_length != 0) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: segment length specified more than once\n");
+                }
+            } else {
+                // XXX Add validation!
+                sscanf(value + 16, "%lld", &segment_length);
+            }
+        }
         header = string_list_consume(header);
     }
     if (name != NULL) {
-        printf("%s\n", name);
+        printf("%s %10lld %s %10lld %10lld\n", name, entries, created == NULL ? "?" : created, segments, segment_length);
     }
     if (args->verbose_level >= VINFO) {
         printf("====\n");
