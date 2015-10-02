@@ -20,7 +20,13 @@
 #define EXPECTED_HEADER_SIZE 4096
 #define EXPECTED_HEADER_LINES 100
 
+#define MAX_IDENTIFIER 63
+
+// Verbosity levels
+#define VERROR
+#define VINTERACTIVE 1
 #define VWARN 2
+#define VINFO 3
 
 enum operation {
     NOP = 0,

@@ -82,6 +82,9 @@ char *read_bucket_line(FILE *stream, size_t *line_length, arguments *args) {
     if (args->verbose_level >= VWARN && *line_length > EXPECTED_LINE_LENGTH) {
         fprintf(stderr, "Warning: line longer than expected: %d\n", (int) *line_length);
     }
+    if (line[*line_length - 1] == '\n') {
+        line[*line_length - 1] = '\0';
+    }
     return line;
 }
 
@@ -146,20 +149,93 @@ string_list *read_header(FILE *stream, off_t offset, arguments *args) {
     return header_head;
 }
 
+char *extract_identifier(char *source, char *kind, arguments *args) {
+    char *identifier = malloc(MAX_IDENTIFIER + 1);
+    int length = 0;
+    bool started = false;
+    bool ended = false;
+    bool bad = false;
+    int source_length = strlen(source);
+    char c;
+    for (int i = 0; i < source_length; i++) {
+        c = source[i];
+        if (c == ' ') {
+            if (!started) {
+                continue;
+            } else {
+                ended = true;
+            }
+        }
+        if ((c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') || c == '_' ||
+            (!length && (
+                (c >= '0' && c <= '9') ||
+                // Somebody will surely like to have array-like or field-like identifiers
+                c == '[' || c == ']' || c == '.')))
+        {
+            if (ended || length == MAX_IDENTIFIER) {
+                bad = true;
+                break;
+            }
+            started = true;
+            identifier[length++] = c;
+        } else {
+            bad = true;
+            break;
+        }
+    }
+    if (bad || !started) {
+        if (args->verbose_level >= VWARN) {
+            identifier[length] = '\0';
+            fprintf(stderr, "Warning: bad %s identifier %s%c\n", kind, identifier, (int) c);
+        }
+        free(identifier);
+        return NULL;
+    }
+    identifier[length] = '\0';
+    return identifier;
+}
+
 void probe_bucket(bucket_info *info, char *filename, arguments *args) {
     info->name = strndup(filename, strlen(filename) - 3);
-    printf("%s\n", info->name);
     FILE *stream = fopen(filename, "rb");
     string_list *header = read_header(stream, 0, args);
+
+    char *name = NULL;
+    int64_t entries = 0;
+    int64_t segments = 1;
+    int64_t segment_size = 0;
+    char *created;
+    char *comment;
+    
     while (header) {
-        printf("%s\n", header->string);
+        char *value = header->string + 1; /* Skip heading # */
+        if (args->verbose_level >= VINFO) {
+            printf("%s\n", value);
+        }
+        if (strncmp("Name: ", value, 6) == 0) {
+            if (name != NULL) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: name specified more than once\n");
+                }
+            } else {
+                name = extract_identifier(value + 6, "name", args);
+            }
+        }
         header = string_list_consume(header);
+    }
+    if (name != NULL) {
+        printf("%s\n", name);
+    }
+    if (args->verbose_level >= VINFO) {
+        printf("====\n");
     }
 }
 
 void enumerate_buckets(buckets_enumeration *buckets, arguments *args) {
     struct dirent *entry;
     DIR *current = opendir(".");
+    bool found = false;
     if (!current) {
         error(ESPURIOUS, errno, "Opening directory for listing");
     }
@@ -173,8 +249,12 @@ void enumerate_buckets(buckets_enumeration *buckets, arguments *args) {
             char *filename = entry->d_name;
             int len = strlen(filename);
             if (len > 3 && strcmp(filename + (len - 3), ".bx") == 0) {
+                if (!found && args->verbose_level >= VINTERACTIVE) {
+                    printf(" Name Entries Created Segments Segment size Comment\n");
+                }
                 bucket_info info;
                 probe_bucket(&info, filename, args);
+                found = true;
             }
         }
     } while (entry);
