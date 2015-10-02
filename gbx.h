@@ -1,8 +1,26 @@
+
+#include <assert.h>
+
+#include <errno.h>
+#include <error.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+
+#include <sys/types.h>
+#include <dirent.h>
+
+#define ESPURIOUS 120
+#define ECMDLINE 1
+
+#define EXPECTED_LINE_LENGTH 1024
+#define EXPECTED_HEADER_SIZE 4096
+#define EXPECTED_HEADER_LINES 100
+
+#define VWARN 2
 
 enum operation {
     NOP = 0,
@@ -36,3 +54,8 @@ typedef struct {
     int count;
     buckets_entry *first;
 } buckets_enumeration;
+
+typedef struct string_list_struct {
+    struct string_list_struct *next;
+    char *string;
+} string_list;

@@ -1,7 +1,7 @@
 TARGET = gbx
 LIBS = 
 CC = gcc
-CFLAGS = -g -std=c99 -Wall
+CFLAGS = -g -std=c99 -Wall -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
 
 .PHONY: default all clean
 
