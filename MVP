@@ -7,6 +7,7 @@ grindbucket MVP:
 - Chunked
 - Basic operations: store, cat, list
 - Basic manipulations: sort by field, select by field value
+- 8-bit clean
 
 Next steps:
 
@@ -14,6 +15,7 @@ Next steps:
 - join sorted buckets
 - Niceties: sample
 - More metadata, store history
+- UTF-8 aware
 
 Once we have interpretation:
 - query
