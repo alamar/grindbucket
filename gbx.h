@@ -65,3 +65,5 @@ typedef struct string_list_struct {
     struct string_list_struct *next;
     char *string;
 } string_list;
+
+#include "identifier.h"
