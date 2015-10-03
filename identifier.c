@@ -22,7 +22,7 @@ char *extract_identifier(char *source, char *kind, int verbose_level) {
             (length > 0 && (
                 (c >= '0' && c <= '9') ||
                 // Somebody will surely like to have array-like or field-like identifiers
-                c == '[' || c == ']' || c == '.')))
+                c == '-' || c == '[' || c == ']' || c == '.')))
         {
             if (ended || length == MAX_IDENTIFIER) {
                 bad = true;

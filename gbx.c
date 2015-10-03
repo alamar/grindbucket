@@ -274,6 +274,28 @@ void enumerate_buckets(buckets_enumeration *buckets, arguments *args) {
     } while (entry);
 }
 
+void cat_bucket(char *bucket, FILE *output, arguments *args) {
+    char *filename = malloc(strlen(bucket) + 4);
+    sprintf(filename, "%s.bx", bucket);
+    FILE *input = fopen(filename, "rb");
+    if (input == NULL) {
+        error(ENOTFOUND, errno, "Opening bucket for reading");
+    }
+    char *line;
+    size_t line_length;
+    while ((line = read_bucket_line(input, &line_length, args))) {
+        if (!bucket_line_is_blank(line) && !bucket_line_is_header(line)) {
+            fprintf(output, line);
+            printf("\n");
+        }
+        free(line);
+    }
+    if (fclose(input) != 0) {
+        perror("Problem closing bucket after reading");
+    }
+    free(filename);
+}
+
 int main (int argc, char **argv) {
     arguments *args = malloc(sizeof(arguments));
     if (!parse_arguments(args, argc, argv)) {
@@ -288,6 +310,8 @@ int main (int argc, char **argv) {
         buckets_enumeration *buckets = malloc(sizeof(buckets_enumeration));
         enumerate_buckets(buckets, args);
         free(buckets);
+    } else if (args->operation == CAT) {
+        cat_bucket(args->bucket, stdout, args);
     }
     free(args);
 }
