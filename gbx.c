@@ -2,7 +2,14 @@
 
 bool parse_arguments(arguments *args, int argc, char **argv) {
     bool seen_operation = false;
+    bool seen_bucket = false;
     bool fail = false;
+
+    args->operation = NOP;
+    args->bucket = NULL;
+    args->show_usage = false;
+    args->verbose_level = VERROR;
+
     if (argc < 2) {
         args->show_usage = true;
         return true;
@@ -21,10 +28,6 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                 }
             }
         } else {
-            if (seen_operation) {
-                fprintf(stderr, "Unknown argument: %s\n", arg);
-                fail = true;
-            }
             if (strcmp(arg, "list") == 0) {
                 seen_operation = true;
                 args->operation = LIST;
@@ -35,16 +38,34 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                 seen_operation = true;
                 args->operation = STORE;
             } else {
-                fprintf(stderr, "Unknown argument: %s\n", arg);
-                fail = true;
+                if (seen_operation && (args->operation == CAT || args->operation == STORE)) {
+                    char *bucket = extract_identifier(arg, "bucket", VERROR);
+                    if (bucket != NULL) {
+                        seen_bucket = true;
+                        args->bucket = bucket;
+                    } else {
+                        fprintf(stderr, "Bad bucket name: %s\n", arg);
+                        fail = true;
+                    }
+                } else {
+                    fprintf(stderr, "Unknown argument: %s\n", arg);
+                    fail = true;
+                }
             }
         }
+    }
+    if (!seen_operation) {
+        fprintf(stderr, "No operation specified!\n");
+        fail = true;
+    } else if (!seen_bucket && (args->operation == CAT || args->operation == STORE)) {
+        fprintf(stderr, "No bucket name specified!\n");
+        fail = true;
     }
     return !fail;
 }
 
 void print_usage(FILE *stream) {
-    fprintf(stream, "USAGE: gbx [-v] {list|cat|store}\n");
+    fprintf(stream, "USAGE: gbx [-v] {list|cat bucket|store bucket}\n");
 }
 
 string_list *string_list_append(string_list *list, char *string) {
@@ -172,7 +193,7 @@ void probe_bucket(bucket_info *info, char *filename, arguments *args) {
                     fprintf(stderr, "Warning: name specified more than once\n");
                 }
             } else {
-                name = extract_identifier(value + 6, "name", args);
+                name = extract_identifier(value + 6, "bucket", args->verbose_level);
             }
         }
         if (strncmp("Created: ", value, 9) == 0) {

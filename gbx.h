@@ -23,7 +23,7 @@
 #define MAX_IDENTIFIER 63
 
 // Verbosity levels
-#define VERROR
+#define VERROR 0
 #define VINTERACTIVE 1
 #define VWARN 2
 #define VINFO 3
@@ -37,6 +37,7 @@ enum operation {
 
 typedef struct {
     enum operation operation;
+    char *bucket;
     bool show_usage;
     int verbose_level;
 } arguments;

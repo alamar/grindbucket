@@ -1,6 +1,6 @@
 #include "gbx.h"
 
-char *extract_identifier(char *source, char *kind, arguments *args) {
+char *extract_identifier(char *source, char *kind, int verbose_level) {
     char *identifier = malloc(MAX_IDENTIFIER + 1);
     int length = 0;
     bool started = false;
@@ -19,7 +19,7 @@ char *extract_identifier(char *source, char *kind, arguments *args) {
         }
         if ((c >= 'a' && c <= 'z') ||
             (c >= 'A' && c <= 'Z') || c == '_' ||
-            (!length && (
+            (length > 0 && (
                 (c >= '0' && c <= '9') ||
                 // Somebody will surely like to have array-like or field-like identifiers
                 c == '[' || c == ']' || c == '.')))
@@ -36,7 +36,7 @@ char *extract_identifier(char *source, char *kind, arguments *args) {
         }
     }
     if (bad || !started) {
-        if (args->verbose_level >= VWARN) {
+        if (verbose_level >= VWARN) {
             identifier[length] = '\0';
             fprintf(stderr, "Warning: bad %s identifier %s%c\n", kind, identifier, (int) c);
         }
