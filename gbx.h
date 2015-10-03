@@ -13,12 +13,15 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+#define DEFAULT_HEADER_SIZE 4096
+#define DEFAULT_SEGMENT_SIZE (1024 * 1024)
+
 #define ESPURIOUS 120
 #define ECMDLINE 1
 #define ENOTFOUND 2
 
 #define EXPECTED_LINE_LENGTH 1024
-#define EXPECTED_HEADER_SIZE 4096
+#define EXPECTED_HEADER_SIZE DEFAULT_HEADER_SIZE
 #define EXPECTED_HEADER_LINES 100
 
 #define MAX_IDENTIFIER 63
@@ -35,6 +38,12 @@ enum operation {
     CAT = 20,
     STORE = 30
 };
+
+typedef enum {
+    ONLY = 0,
+    MIDDLE = 1,
+    LAST = 2
+} segment_position;
 
 typedef struct {
     enum operation operation;
@@ -69,3 +78,7 @@ typedef struct string_list_struct {
 } string_list;
 
 #include "identifier.h"
+
+#include "string_list.h"
+
+#include "write_segment.h"

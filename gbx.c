@@ -68,25 +68,6 @@ void print_usage(FILE *stream) {
     fprintf(stream, "USAGE: gbx [-v] {list|cat bucket|store bucket}\n");
 }
 
-string_list *string_list_append(string_list *list, char *string) {
-    string_list *entry = malloc(sizeof(string_list));
-    entry->next = NULL;
-    entry->string = string;
-    if (list != NULL) {
-        assert(list->next == NULL);
-        list->next = entry;
-    }
-    return entry;
-}
-
-string_list *string_list_consume(string_list *current) {
-    assert(current);
-    string_list *next = current->next;
-    free(current->string);
-    free(current);
-    return next;
-}
-
 char *read_bucket_line(FILE *stream, size_t *line_length, arguments *args) {
     char *line = NULL;
     size_t n = 0;
@@ -286,12 +267,59 @@ void cat_bucket(char *bucket, FILE *output, arguments *args) {
     while ((line = read_bucket_line(input, &line_length, args))) {
         if (!bucket_line_is_blank(line) && !bucket_line_is_header(line)) {
             fprintf(output, line);
-            printf("\n");
+            fprintf(output, "\n");
         }
         free(line);
     }
     if (fclose(input) != 0) {
         perror("Problem closing bucket after reading");
+    }
+    free(filename);
+}
+
+void store_bucket(FILE *input, char *bucket, arguments *args) {
+    string_list *cache_head = NULL;
+    string_list *cache_tail = NULL;
+    size_t flush_limit = DEFAULT_SEGMENT_SIZE - DEFAULT_HEADER_SIZE;
+    char *filename = malloc(strlen(bucket) + 4);
+    sprintf(filename, "%s.bx", bucket);
+    FILE *output = fopen(filename, "wb");
+    // XXX Check if it already exists!
+    if (output == NULL) {
+        error(ESPURIOUS, errno, "Opening bucket for writing");
+    }
+    char *line;
+    size_t line_length = 0;
+    size_t accumulated_length = 0;
+    int segment_ordinal = 1;
+    int segment_entries = 0;
+    while ((line = read_bucket_line(input, &line_length, args))) {
+        if (bucket_line_is_header(line)) {
+            // XXX ignore them for now
+            continue;
+        }
+        if (accumulated_length + line_length > flush_limit) {
+            assert(cache_head != NULL);
+            write_segment_to_bucket(output, bucket, cache_head,
+                    segment_ordinal++, segment_entries, MIDDLE);
+            segment_entries = 0;
+            accumulated_length = 0;
+            cache_head = NULL;
+            cache_tail = NULL;
+        }
+        accumulated_length += line_length;
+        cache_tail = string_list_append(cache_tail, line);
+        segment_entries++;
+        if (cache_head == NULL) {
+            cache_head = cache_tail;
+        }
+    }
+    if (cache_head != NULL) {
+        write_segment_to_bucket(output, bucket, cache_head,
+                segment_ordinal, segment_entries, segment_ordinal == 1 ? ONLY : LAST);
+    }
+    if (fclose(output) != 0) {
+        error(ESPURIOUS, errno, "Problem closing bucket after writing");
     }
     free(filename);
 }
@@ -312,6 +340,8 @@ int main (int argc, char **argv) {
         free(buckets);
     } else if (args->operation == CAT) {
         cat_bucket(args->bucket, stdout, args);
+    } else if (args->operation == STORE) {
+        store_bucket(stdin, args->bucket, args);
     }
     free(args);
 }
