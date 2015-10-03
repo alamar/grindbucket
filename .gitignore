@@ -1,2 +1,4 @@
 gbx
 *.o
+*.kdev4
+*.bx
