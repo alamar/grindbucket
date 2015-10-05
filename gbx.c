@@ -332,6 +332,13 @@ void parse_bucket_header(char *filename, segment_header *result, arguments *args
     }
 }
 
+void cleanup_segment_header(segment_header *header) {
+     free(header->name);
+     free(header->created);
+     free(header->comment);
+     string_list_discard(header->fields);
+}
+
 void ellipsis_terminate(char *tail) {
     if (tail[3] != '\0') {
         tail[0] = '.';
@@ -339,6 +346,48 @@ void ellipsis_terminate(char *tail) {
         tail[2] = '.';
         tail[3] = '\0';
     }
+}
+
+void print_bucket_info(segment_header *header, char *filename) {
+    char pr_name[24];
+    if (header->name) {
+        strncpy(pr_name, header->name, 24);
+        ellipsis_terminate(pr_name + 20);
+    } else {
+        snprintf(pr_name, 24, "<%s>", filename);
+    }
+    char pr_created[11] = "?   ";
+    if (header->created) {
+        strncpy(pr_created, header->created, 10);
+        pr_created[10] = '\0';
+    }
+    char pr_entries[30];
+    if (header->entries == 0) {
+        strcpy(pr_entries, "?   ");
+    } else {
+        snprintf(pr_entries, 30, "%12lld", (long long int) header->entries);
+    }
+    char pr_fields[41] = "";
+    if (header->fields) {
+        strncat(pr_fields, header->fields->string, 40);
+        for (string_list *field = header->fields->next; field; field = field->next) {
+            strncat(pr_fields, ",", 40);
+            strncat(pr_fields, field->string, 40);
+            if (pr_fields[39] != '\0') {
+                ellipsis_terminate(pr_fields + 36);
+                break;
+            }
+        }
+    } else {
+        strcpy(pr_fields, "   ?");
+    }
+
+    char pr_comment[40] = "";
+    if (header->comment) {
+        strncpy(pr_comment, header->comment, 40);
+        ellipsis_terminate(pr_comment + 36);
+    }
+    printf("%-23s %10s %12s %-39s %-39s\n", pr_name, pr_created, pr_entries, pr_fields, pr_comment);
 }
 
 void enumerate_buckets(arguments *args) {
@@ -363,45 +412,8 @@ void enumerate_buckets(arguments *args) {
                     printf(" Name\t\t\tCreated     Entries\tFields\t\t\t\t\tComment\n");
                 }
                 parse_bucket_header(filename, &header, args);
-                char pr_name[24];
-                if (header.name) {
-                    strncpy(pr_name, header.name, 24);
-                    ellipsis_terminate(pr_name + 20);
-                } else {
-                    snprintf(pr_name, 24, "<%s>", filename);
-                }
-                char pr_created[11] = "?   ";
-                if (header.created) {
-                    strncpy(pr_created, header.created, 10);
-                    pr_created[10] = '\0';
-                }
-                char pr_entries[30];
-                if (header.entries == 0) {
-                    strcpy(pr_entries, "?   ");
-                } else {
-                    snprintf(pr_entries, 30, "%12lld", (long long int) header.entries);
-                }
-                char pr_fields[41] = "";
-                if (header.fields) {
-                    strncat(pr_fields, header.fields->string, 40);
-                    for (string_list *field = header.fields->next; field; field = field->next) {
-                        strncat(pr_fields, ",", 40);
-                        strncat(pr_fields, field->string, 40);
-                        if (pr_fields[39] != '\0') {
-                            ellipsis_terminate(pr_fields + 36);
-                            break;
-                        }
-                    }
-                } else {
-                    strcpy(pr_fields, "   ?");
-                }
-
-                char pr_comment[40] = "";
-                if (header.comment) {
-                    strncpy(pr_comment, header.comment, 40);
-                    ellipsis_terminate(pr_comment + 36);
-                }
-                printf("%-23s %10s %12s %-39s %-39s\n", pr_name, pr_created, pr_entries, pr_fields, pr_comment);
+                print_bucket_info(&header, filename);
+                cleanup_segment_header(&header);
                 found = true;
             }
         }
