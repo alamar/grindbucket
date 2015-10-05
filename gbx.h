@@ -52,6 +52,12 @@ typedef enum {
     LAST = 2
 } segment_position;
 
+typedef enum {
+    ONE_LINE,
+    MULTILINE,
+    COMMENT
+} header_kind;
+
 typedef struct {
     enum operation operation;
     char *bucket;
@@ -60,14 +66,23 @@ typedef struct {
     string_list *fields;
 } arguments;
 
-/*typedef struct {
+typedef struct {
     char *name;
+    char *created;
     char *comment;
-    int chunks;
-    int64_t chunk_size;
-    int64_t records;
-    int64_t bytes;
-} bucket_info;*/
+    string_list *fields;
+    int64_t entries;
+    int64_t segments;
+    int64_t segment_length;
+} segment_header;
+
+typedef struct {
+    header_kind kind;
+    char *name;
+    char *value;
+} header_line;
+
+extern char *empty_string;
 
 #include "identifier.h"
 

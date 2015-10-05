@@ -1,13 +1,15 @@
 #include "gbx.h"
 
-string_list *parse_argument_fields(char *fields_description) {
+char *empty_string = "";
+
+string_list *parse_argument_fields(char *fields_description, char *separator) {
     char *first_comma = fields_description;
     char *next_comma;
     string_list *head = NULL;
     string_list *acc = NULL;
     bool finish = false;
     do {
-        next_comma = strstr(first_comma, ",");
+        next_comma = strstr(first_comma, separator);
         if (!next_comma) {
             next_comma = fields_description + strlen(fields_description);
             finish = true;
@@ -53,9 +55,9 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                     args->verbose_level++;
                 } else if (arg[pos] == 'F') {
                     if (pos + 1 == len && (i + 1 < argc)) {
-                        args->fields = parse_argument_fields(argv[++i]);
+                        args->fields = parse_argument_fields(argv[++i], ",");
                     } else if (pos + 1 < len) {
-                        args->fields = parse_argument_fields(arg + pos + 1);
+                        args->fields = parse_argument_fields(arg + pos + 1, ",");
                         if (args->fields != NULL) {
                             break;
                         }
@@ -152,7 +154,7 @@ bool bucket_line_is_header(char *line) {
     return *line == '#';
 }
 
-string_list *read_header(FILE *stream, off_t offset, arguments *args) {
+string_list *read_header_lines(FILE *stream, off_t offset, arguments *args) {
     int header_lines_found = 0;
     off_t header_size = 0;
     string_list *header_head = NULL;
@@ -196,78 +198,146 @@ string_list *read_header(FILE *stream, off_t offset, arguments *args) {
     return header_head;
 }
 
-void probe_bucket(char *filename, arguments *args) {
-    FILE *stream = fopen(filename, "rb");
-    string_list *header = read_header(stream, 0, args);
+// Will mangle *line and return its bits in header_line
+void parse_header_line(char *line, header_line *output) {
+    assert(line[0] == '#');
+    if (output->kind == MULTILINE && output->name != NULL && output->value == NULL &&
+            line[1] == ' ')
+    {
+        output->value = line + 2;
+        return;
+    } else {
+        output->kind = COMMENT;
+        output->name = empty_string;
+        output->value = line + 1;
+    }
 
-    char *name = NULL;
-    int64_t entries = 0;
-    int64_t segments = 1;
-    int64_t segment_length = 0;
-    char *created = NULL;
-    char *comment = NULL;
-    
-    while (header) {
-        char *value = header->string + 1; /* Skip heading # */
-        if (args->verbose_level >= VINFO) {
-            printf("%s\n", value);
+    if (line[1] < 'A' || line[1] > 'Z' || line[2] == '\0') {
+        return;
+    }
+
+    // Maybe someday use extract_identifier?
+    for (char *pos = line + 2; pos[1] != '\0'; pos++) {
+        if (*pos == ':' && pos[1] == ' ') {
+            output->kind = ONE_LINE;
+            output->name = line + 1;
+            output->value = pos + 2;
+            *pos = '\0';
+            return;
         }
-        if (strncmp("Name: ", value, 6) == 0) {
-            if (name != NULL) {
+        if (!((*pos >= 'a' && *pos <= 'z') || (*pos >= 'A' && *pos <= 'Z') || *pos == '-')) {
+            return;
+        }
+    }
+    output->kind = MULTILINE;
+    output->name = line + 1;
+    output->value = NULL;
+}
+
+void parse_bucket_header(char *filename, segment_header *result, arguments *args) {
+    FILE *stream = fopen(filename, "rb");
+    string_list *headers = read_header_lines(stream, 0, args);
+    header_line header;
+
+    result->name = NULL;
+    result->created = NULL;
+    result->comment = NULL;
+    result->fields = NULL;
+    result->entries = 0;
+    result->segments = 1;
+    result->segment_length = 0;
+
+    long long int tmp = 0;
+
+    while (headers) {
+        parse_header_line(headers->string, &header);
+        if (header.kind == MULTILINE && headers->next) {
+            parse_header_line(headers->next->string, &header);
+        }
+        if (strcmp("Name", header.name) == 0) {
+            if (result->name != NULL) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: name specified more than once\n");
                 }
             } else {
-                name = extract_identifier(value + 6, ID_EOL, "bucket", args->verbose_level);
+                result->name = extract_identifier(header.value, ID_EOL, "bucket", args->verbose_level);
             }
         }
-        if (strncmp("Created: ", value, 9) == 0) {
-            if (created != NULL) {
+        if (strcmp("Comment", header.name) == 0) {
+            if (result->comment != NULL) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: comment specified more than once\n");
+                }
+            } else {
+                result->comment = strdup(header.value);
+            }
+        }
+        if (strcmp("Fields", header.name) == 0) {
+            if (result->fields != NULL) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: field names specified more than once\n");
+                }
+            } else {
+                result->fields = parse_argument_fields(header.value, "\t");
+            }
+        }
+        if (strcmp("Created", header.name) == 0) {
+            if (result->created != NULL) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: creation date-time specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                created = value + 9;
+                result->created = strdup(header.value);
             }
         }
-        if (strncmp("Segments: ", value, 10) == 0) {
-            if (segments != 1) {
+        if (strcmp("Segments", header.name) == 0) {
+            if (result->segments != 1) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: segments count specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                sscanf(value + 10, "%lld", &segments);
+                sscanf(header.value, "%lld", &tmp);
+                result->segments = tmp;
             }
         }
-        if (strncmp("Entries: ", value, 9) == 0) {
-            if (entries != 0) {
+        if (strcmp("Entries", header.name) == 0) {
+            if (result->entries != 0) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: entries count specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                sscanf(value + 9, "%lld", &entries);
+                sscanf(header.value, "%lld", &tmp);
+                result->entries = tmp;
             }
         }
-        if (strncmp("Segment-Length: ", value, 16) == 0) {
-            if (segment_length != 0) {
+        if (strcmp("Segment-Length", header.name) == 0) {
+            if (result->segment_length != 0) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: segment length specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                sscanf(value + 16, "%lld", &segment_length);
+                sscanf(header.value, "%lld", &tmp);
+                result->segment_length = tmp;
             }
         }
-        header = string_list_consume(header);
+        headers = string_list_consume(headers);
+        if (headers && header.kind == MULTILINE) {
+            // XXX Only support one line for multiline comments :)
+            headers = string_list_consume(headers);
+        }
     }
-    if (name != NULL) {
-        printf("%s %10lld %s %10lld %10lld\n", name, entries, (created == NULL) ? "?" : created, segments, segment_length);
-    }
-    if (args->verbose_level >= VINFO) {
-        printf("====\n");
+}
+
+void ellipsis_terminate(char *tail) {
+    if (tail[3] != '\0') {
+        tail[0] = '.';
+        tail[1] = '.';
+        tail[2] = '.';
+        tail[3] = '\0';
     }
 }
 
@@ -287,15 +357,58 @@ void enumerate_buckets(arguments *args) {
         } else {
             char *filename = entry->d_name;
             int len = strlen(filename);
+            segment_header header;
             if (len > 3 && strcmp(filename + (len - 3), ".bx") == 0) {
                 if (!found && args->verbose_level >= VINTERACTIVE) {
-                    printf(" Name Entries Created Segments Segment size Comment\n");
+                    printf(" Name\t\t\tCreated     Entries\tFields\t\t\t\t\tComment\n");
                 }
-                probe_bucket(filename, args);
+                parse_bucket_header(filename, &header, args);
+                char pr_name[24];
+                if (header.name) {
+                    strncpy(pr_name, header.name, 24);
+                    ellipsis_terminate(pr_name + 20);
+                } else {
+                    snprintf(pr_name, 24, "<%s>", filename);
+                }
+                char pr_created[11] = "?   ";
+                if (header.created) {
+                    strncpy(pr_created, header.created, 10);
+                    pr_created[10] = '\0';
+                }
+                char pr_entries[30];
+                if (header.entries == 0) {
+                    strcpy(pr_entries, "?   ");
+                } else {
+                    snprintf(pr_entries, 30, "%12lld", (long long int) header.entries);
+                }
+                char pr_fields[41] = "";
+                if (header.fields) {
+                    strncat(pr_fields, header.fields->string, 40);
+                    for (string_list *field = header.fields->next; field; field = field->next) {
+                        strncat(pr_fields, ",", 40);
+                        strncat(pr_fields, field->string, 40);
+                        if (pr_fields[39] != '\0') {
+                            ellipsis_terminate(pr_fields + 36);
+                            break;
+                        }
+                    }
+                } else {
+                    strcpy(pr_fields, "   ?");
+                }
+
+                char pr_comment[40] = "";
+                if (header.comment) {
+                    strncpy(pr_comment, header.comment, 40);
+                    ellipsis_terminate(pr_comment + 36);
+                }
+                printf("%-23s %10s %12s %-39s %-39s\n", pr_name, pr_created, pr_entries, pr_fields, pr_comment);
                 found = true;
             }
         }
     } while (entry);
+    if (!found) {
+        printf("No buckets in current directory.");
+    }
 }
 
 void cat_bucket(char *bucket, FILE *output, arguments *args) {
