@@ -52,25 +52,6 @@ typedef struct {
     int verbose_level;
 } arguments;
 
-typedef struct {
-    char *name;
-    char *comment;
-    int chunks;
-    int64_t chunk_size;
-    int64_t records;
-    int64_t bytes;
-} bucket_info;
-
-typedef struct buckets_entry_struct {
-    int pos;
-    struct buckets_entry_struct *next;
-    bucket_info info; 
-} buckets_entry;
-
-typedef struct {
-    int count;
-    buckets_entry *first;
-} buckets_enumeration;
 
 typedef struct string_list_struct {
     struct string_list_struct *next;

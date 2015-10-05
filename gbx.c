@@ -151,8 +151,7 @@ string_list *read_header(FILE *stream, off_t offset, arguments *args) {
     return header_head;
 }
 
-void probe_bucket(bucket_info *info, char *filename, arguments *args) {
-    info->name = strndup(filename, strlen(filename) - 3);
+void probe_bucket(char *filename, arguments *args) {
     FILE *stream = fopen(filename, "rb");
     string_list *header = read_header(stream, 0, args);
 
@@ -227,7 +226,7 @@ void probe_bucket(bucket_info *info, char *filename, arguments *args) {
     }
 }
 
-void enumerate_buckets(buckets_enumeration *buckets, arguments *args) {
+void enumerate_buckets(arguments *args) {
     struct dirent *entry;
     DIR *current = opendir(".");
     bool found = false;
@@ -247,8 +246,7 @@ void enumerate_buckets(buckets_enumeration *buckets, arguments *args) {
                 if (!found && args->verbose_level >= VINTERACTIVE) {
                     printf(" Name Entries Created Segments Segment size Comment\n");
                 }
-                bucket_info info;
-                probe_bucket(&info, filename, args);
+                probe_bucket(filename, args);
                 found = true;
             }
         }
@@ -335,9 +333,7 @@ int main (int argc, char **argv) {
         return 0;
     }
     if (args->operation == LIST) {
-        buckets_enumeration *buckets = malloc(sizeof(buckets_enumeration));
-        enumerate_buckets(buckets, args);
-        free(buckets);
+        enumerate_buckets(args);
     } else if (args->operation == CAT) {
         cat_bucket(args->bucket, stdout, args);
     } else if (args->operation == STORE) {
