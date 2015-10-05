@@ -1,37 +1,36 @@
 
 #include "gbx.h"
 
-void write_segment_line(FILE *output, char *line, size_t *just_written) {
-     *just_written = fwrite(line, 1, strlen(line), output);
-     *just_written += fwrite("\n", 1, 1, output);
+size_t write_segment_line(FILE *output, char *line) {
+     size_t just_written = fwrite(line, 1, strlen(line), output);
+     return just_written + fwrite("\n", 1, 1, output);
 }
 
-void write_segment_header(FILE *output, char *name, char *value, size_t *just_written) {
+size_t write_segment_header(FILE *output, char *name, char *value) {
     // XXX Add value validation
     char *line = NULL;
     if (asprintf(&line, "#%s: %s", name, value) <= 0) {
         error(ESPURIOUS, errno, "Problem formatting header");        
     }
-    write_segment_line(output, line, just_written);
-    free(line);    
+    size_t just_written = write_segment_line(output, line);
+    free(line);
+    return just_written;
 }
 
-void write_segment_int_header(FILE *output, char *name, long long num_value, size_t *just_written) {
+size_t write_segment_int_header(FILE *output, char *name, long long num_value) {
     char value[100];
     snprintf(value, 100, "%lld", num_value);
-    write_segment_header(output, name, value, just_written);
+    return write_segment_header(output, name, value);
 }
 
-void write_segment_padding(FILE *output, int length, size_t *just_written) {
-    *just_written = 0;
+size_t write_segment_padding(FILE *output, int length) {
     if (length == 0) {
-        return;
+        return 0;
     } else if (length == 1) {
-        write_segment_line(output, "", just_written);
-        return;
+        return write_segment_line(output, "");
     }
+    size_t just_written = 0;
     do {
-        size_t just_just_written;
         int line_length = length;
         if (line_length == 1025) {
             line_length = 1023;
@@ -42,11 +41,11 @@ void write_segment_padding(FILE *output, int length, size_t *just_written) {
         line[0] = '#';
         memset(line + 1, ' ', line_length - 2);
         line[line_length - 1] = '\0';
-        write_segment_line(output, line, &just_just_written);
-        *just_written += just_just_written;
+        just_written += write_segment_line(output, line);
         length -= line_length;
     } while (length > 0);
     assert(length == 0);
+    return just_written;
 }
 
 char *format_fields_header(string_list *fields) {
@@ -70,43 +69,32 @@ void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
         int segment_ordinal, int segment_entries, segment_position spos, arguments *args)
 {
     size_t written = 0;
-    size_t just_written = 0;
 
-    write_segment_line(output, "##", &just_written);
-    written += just_written;    
-    write_segment_header(output, "Name", bucket, &just_written);
-    written += just_written;
-    write_segment_int_header(output, spos == ONLY ? "Entries" : "Segment-Entries", segment_entries, &just_written);
-    written += just_written;
+    written += write_segment_line(output, "##");
+    written += write_segment_header(output, "Name", bucket);
+    written += write_segment_int_header(output, spos == ONLY ? "Entries" : "Segment-Entries", segment_entries);
     if (spos != ONLY) {
-        write_segment_int_header(output, "Segment-Ordinal", segment_ordinal, &just_written);
-        written += just_written;
+        written += write_segment_int_header(output, "Segment-Ordinal", segment_ordinal);
     }
     if (spos == MIDDLE) {
-        write_segment_int_header(output, "Segment-Length", DEFAULT_SEGMENT_SIZE, &just_written);
-        written += just_written;
+        written += write_segment_int_header(output, "Segment-Length", DEFAULT_SEGMENT_SIZE);
     }
     if (args->fields != NULL) {
-        write_segment_line(output, "#Fields", &just_written);
-        written += just_written;
+        written += write_segment_line(output, "#Fields");
         char *line_of_fields = format_fields_header(args->fields);
-        write_segment_line(output, line_of_fields, &just_written);
-        written += just_written;
+        written += write_segment_line(output, line_of_fields);
         free(line_of_fields);
     }
     if (spos == MIDDLE) {
         assert(written < DEFAULT_HEADER_SIZE);
-        write_segment_padding(output, DEFAULT_HEADER_SIZE - written, &just_written);
-        written += just_written;
+        written += write_segment_padding(output, DEFAULT_HEADER_SIZE - written);
     }
     while ((data = string_list_consume(data))) {
-        write_segment_line(output, data->string, &just_written);
-        written += just_written;
+        written += write_segment_line(output, data->string);
     }
     if (spos == MIDDLE) {
         assert(written <= DEFAULT_SEGMENT_SIZE);
-        write_segment_padding(output, DEFAULT_SEGMENT_SIZE - written, &just_written);
-        written += just_written;
+        written += write_segment_padding(output, DEFAULT_SEGMENT_SIZE - written);
         assert(written == DEFAULT_SEGMENT_SIZE);
     }
 }
