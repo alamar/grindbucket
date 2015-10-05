@@ -1,13 +1,13 @@
 
 #include "gbx.h"
 
-string_list *string_list_append(string_list *list, char *string) {
+string_list *string_list_append(string_list *tail, char *string) {
     string_list *entry = malloc(sizeof(string_list));
     entry->next = NULL;
     entry->string = string;
-    if (list != NULL) {
+    if (tail) {
         assert(list->next == NULL);
-        list->next = entry;
+        tail->next = entry;
     }
     return entry;
 }
@@ -20,8 +20,8 @@ string_list *string_list_consume(string_list *current) {
     return next;
 }
 
-void string_list_discard(string_list *list) {
-    while (list) {
-        list = string_list_consume(list);
+void string_list_discard(string_list *head) {
+    while (head) {
+        head = string_list_consume(head);
     }
 }

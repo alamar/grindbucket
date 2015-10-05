@@ -8,17 +8,17 @@ string_list *parse_argument_fields(char *fields_description) {
     bool finish = false;
     do {
         next_comma = strstr(first_comma, ",");
-        if (next_comma == NULL) {
+        if (!next_comma) {
             next_comma = fields_description + strlen(fields_description);
             finish = true;
         }
         char *field = extract_identifier(first_comma, (next_comma - first_comma), "field", VWARN);
-        if (field == NULL) {
+        if (!field) {
             string_list_discard(head);
             return NULL;
         } else {
             acc = string_list_append(acc, field);
-            if (head == NULL) {
+            if (!head) {
                 head = acc;
             }
         }
@@ -60,7 +60,7 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                             break;
                         }
                     }
-                    if (args->fields == NULL) {
+                    if (!args->fields) {
                         fprintf(stderr, "-F requires list of fields\n");
                         fail = true;
                     }
@@ -261,7 +261,7 @@ void probe_bucket(char *filename, arguments *args) {
         header = string_list_consume(header);
     }
     if (name != NULL) {
-        printf("%s %10lld %s %10lld %10lld\n", name, entries, created == NULL ? "?" : created, segments, segment_length);
+        printf("%s %10lld %s %10lld %10lld\n", name, entries, (created == NULL) ? "?" : created, segments, segment_length);
     }
     if (args->verbose_level >= VINFO) {
         printf("====\n");
@@ -299,7 +299,7 @@ void cat_bucket(char *bucket, FILE *output, arguments *args) {
     char *filename = malloc(strlen(bucket) + 4);
     sprintf(filename, "%s.bx", bucket);
     FILE *input = fopen(filename, "rb");
-    if (input == NULL) {
+    if (!input) {
         error(ENOTFOUND, errno, "Opening bucket for reading");
     }
     char *line;
@@ -325,7 +325,7 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
     sprintf(filename, "%s.bx", bucket);
     FILE *output = fopen(filename, "wb");
     // XXX Check if it already exists!
-    if (output == NULL) {
+    if (!output) {
         error(ESPURIOUS, errno, "Opening bucket for writing");
     }
     char *line;
@@ -350,11 +350,11 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
         accumulated_length += line_length;
         cache_tail = string_list_append(cache_tail, line);
         segment_entries++;
-        if (cache_head == NULL) {
+        if (!cache_head) {
             cache_head = cache_tail;
         }
     }
-    if (cache_head != NULL) {
+    if (cache_head) {
         write_segment_to_bucket(output, bucket, cache_head,
                 segment_ordinal, segment_entries, segment_ordinal == 1 ? ONLY : LAST, args);
     }
@@ -364,7 +364,7 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
     free(filename);
 }
 
-int main (int argc, char **argv) {
+int main(int argc, char **argv) {
     arguments *args = malloc(sizeof(arguments));
     if (!parse_arguments(args, argc, argv)) {
         print_usage(stderr);
