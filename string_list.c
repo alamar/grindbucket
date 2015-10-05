@@ -6,7 +6,7 @@ string_list *string_list_append(string_list *tail, char *string) {
     entry->next = NULL;
     entry->string = string;
     if (tail) {
-        assert(list->next == NULL);
+        assert(tail->next == NULL);
         tail->next = entry;
     }
     return entry;

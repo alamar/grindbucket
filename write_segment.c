@@ -79,7 +79,7 @@ void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
     if (spos == MIDDLE) {
         written += write_segment_int_header(output, "Segment-Length", DEFAULT_SEGMENT_SIZE);
     }
-    if (args->fields != NULL) {
+    if (args->fields) {
         written += write_segment_line(output, "#Fields");
         char *line_of_fields = format_fields_header(args->fields);
         written += write_segment_line(output, line_of_fields);
