@@ -19,3 +19,9 @@ string_list *string_list_consume(string_list *current) {
     free(current);
     return next;
 }
+
+void string_list_discard(string_list *list) {
+    while (list) {
+        list = string_list_consume(list);
+    }
+}

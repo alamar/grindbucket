@@ -1,5 +1,32 @@
 #include "gbx.h"
 
+string_list *parse_argument_fields(char *fields_description) {
+    char *first_comma = fields_description;
+    char *next_comma;
+    string_list *head = NULL;
+    string_list *acc = NULL;
+    bool finish = false;
+    do {
+        next_comma = strstr(first_comma, ",");
+        if (next_comma == NULL) {
+            next_comma = fields_description + strlen(fields_description);
+            finish = true;
+        }
+        char *field = extract_identifier(first_comma, (next_comma - first_comma), "field", VWARN);
+        if (field == NULL) {
+            string_list_discard(head);
+            return NULL;
+        } else {
+            acc = string_list_append(acc, field);
+            if (head == NULL) {
+                head = acc;
+            }
+        }
+        first_comma = next_comma + 1;
+    } while (!finish);
+    return head;
+}
+
 bool parse_arguments(arguments *args, int argc, char **argv) {
     bool seen_operation = false;
     bool seen_bucket = false;
@@ -9,6 +36,7 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
     args->bucket = NULL;
     args->show_usage = false;
     args->verbose_level = VERROR;
+    args->fields = NULL;
 
     if (argc < 2) {
         args->show_usage = true;
@@ -23,8 +51,22 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                     args->show_usage = 1;
                 } else if (arg[pos] == 'v') {
                     args->verbose_level++;
+                } else if (arg[pos] == 'F') {
+                    if (pos + 1 == len && (i + 1 < argc)) {
+                        args->fields = parse_argument_fields(argv[++i]);
+                    } else if (pos + 1 < len) {
+                        args->fields = parse_argument_fields(arg + pos + 1);
+                        if (args->fields != NULL) {
+                            break;
+                        }
+                    }
+                    if (args->fields == NULL) {
+                        fprintf(stderr, "-F requires list of fields\n");
+                        fail = true;
+                    }
                 } else {
                     fprintf(stderr, "Unknown option: -%c\n", (int) arg[pos]);
+                    fail = true;
                 }
             }
         } else {
@@ -39,7 +81,7 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                 args->operation = STORE;
             } else {
                 if (seen_operation && (args->operation == CAT || args->operation == STORE)) {
-                    char *bucket = extract_identifier(arg, "bucket", VERROR);
+                    char *bucket = extract_identifier(arg, ID_EOL, "bucket", VERROR);
                     if (bucket != NULL) {
                         seen_bucket = true;
                         args->bucket = bucket;
@@ -173,7 +215,7 @@ void probe_bucket(char *filename, arguments *args) {
                     fprintf(stderr, "Warning: name specified more than once\n");
                 }
             } else {
-                name = extract_identifier(value + 6, "bucket", args->verbose_level);
+                name = extract_identifier(value + 6, ID_EOL, "bucket", args->verbose_level);
             }
         }
         if (strncmp("Created: ", value, 9) == 0) {
@@ -299,7 +341,7 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
         if (accumulated_length + line_length > flush_limit) {
             assert(cache_head != NULL);
             write_segment_to_bucket(output, bucket, cache_head,
-                    segment_ordinal++, segment_entries, MIDDLE);
+                    segment_ordinal++, segment_entries, MIDDLE, args);
             segment_entries = 0;
             accumulated_length = 0;
             cache_head = NULL;
@@ -314,7 +356,7 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
     }
     if (cache_head != NULL) {
         write_segment_to_bucket(output, bucket, cache_head,
-                segment_ordinal, segment_entries, segment_ordinal == 1 ? ONLY : LAST);
+                segment_ordinal, segment_entries, segment_ordinal == 1 ? ONLY : LAST, args);
     }
     if (fclose(output) != 0) {
         error(ESPURIOUS, errno, "Problem closing bucket after writing");

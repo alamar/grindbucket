@@ -32,6 +32,8 @@
 #define VWARN 2
 #define VINFO 3
 
+#include "string_list.h"
+
 enum operation {
     NOP = 0,
     LIST = 10,
@@ -50,16 +52,18 @@ typedef struct {
     char *bucket;
     bool show_usage;
     int verbose_level;
+    string_list *fields;
 } arguments;
 
-
-typedef struct string_list_struct {
-    struct string_list_struct *next;
-    char *string;
-} string_list;
+/*typedef struct {
+    char *name;
+    char *comment;
+    int chunks;
+    int64_t chunk_size;
+    int64_t records;
+    int64_t bytes;
+} bucket_info;*/
 
 #include "identifier.h"
-
-#include "string_list.h"
 
 #include "write_segment.h"

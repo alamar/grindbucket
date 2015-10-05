@@ -49,8 +49,25 @@ void write_segment_padding(FILE *output, int length, size_t *just_written) {
     assert(length == 0);
 }
 
+char *format_fields_header(string_list *fields) {
+    char *field = fields->string;
+    int fields_length = 3 + strlen(field);
+    char *line_of_fields = malloc(fields_length);
+    sprintf(line_of_fields, "# %s", field);
+
+    while ((fields = fields->next) != NULL) {
+        field = fields->string;
+        fields_length += strlen(field) + 1;
+        line_of_fields = realloc(line_of_fields, fields_length);
+        // XXX O(N^2)
+        strcat(line_of_fields, "\t");
+        strcat(line_of_fields, field);
+    }
+    return line_of_fields;
+}
+
 void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
-        int segment_ordinal, int segment_entries, segment_position spos)
+        int segment_ordinal, int segment_entries, segment_position spos, arguments *args)
 {
     size_t written = 0;
     size_t just_written = 0;
@@ -68,6 +85,16 @@ void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
     if (spos == MIDDLE) {
         write_segment_int_header(output, "Segment-Length", DEFAULT_SEGMENT_SIZE, &just_written);
         written += just_written;
+    }
+    if (args->fields != NULL) {
+        write_segment_line(output, "#Fields", &just_written);
+        written += just_written;
+        char *line_of_fields = format_fields_header(args->fields);
+        write_segment_line(output, line_of_fields, &just_written);
+        written += just_written;
+        free(line_of_fields);
+    }
+    if (spos == MIDDLE) {
         assert(written < DEFAULT_HEADER_SIZE);
         write_segment_padding(output, DEFAULT_HEADER_SIZE - written, &just_written);
         written += just_written;

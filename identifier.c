@@ -1,21 +1,20 @@
 #include "gbx.h"
 
-char *extract_identifier(char *source, char *kind, int verbose_level) {
+char *extract_identifier(char* source, size_t n, char* kind, int verbose_level) {
     char *identifier = malloc(MAX_IDENTIFIER + 1);
     int length = 0;
     bool started = false;
     bool ended = false;
     bool bad = false;
-    int source_length = strlen(source);
+    int source_length = (n == ID_EOL) ? strlen(source) : n;
     char c;
     for (int i = 0; i < source_length; i++) {
         c = source[i];
         if (c == ' ') {
-            if (!started) {
-                continue;
-            } else {
+            if (started) {
                 ended = true;
             }
+            continue;
         }
         if ((c >= 'a' && c <= 'z') ||
             (c >= 'A' && c <= 'Z') || c == '_' ||
