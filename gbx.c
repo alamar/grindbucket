@@ -79,8 +79,11 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
             } else if (strcmp(arg, "store") == 0) {
                 seen_operation = true;
                 args->operation = STORE;
+            } else if (strcmp(arg, "append") == 0) {
+                seen_operation = true;
+                args->operation = APPEND;
             } else {
-                if (seen_operation && (args->operation == CAT || args->operation == STORE)) {
+                if (seen_operation && (args->operation == CAT || args->operation == STORE || args->operation == APPEND)) {
                     char *bucket = extract_identifier(arg, ID_EOL, "bucket", VERROR);
                     if (bucket != NULL) {
                         seen_bucket = true;
@@ -317,13 +320,31 @@ void cat_bucket(char *bucket, FILE *output, arguments *args) {
     free(filename);
 }
 
-void store_bucket(FILE *input, char *bucket, arguments *args) {
+void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
     string_list *cache_head = NULL;
     string_list *cache_tail = NULL;
     size_t flush_limit = DEFAULT_SEGMENT_SIZE - DEFAULT_HEADER_SIZE;
     char *filename = malloc(strlen(bucket) + 4);
+    struct stat existing;
     sprintf(filename, "%s.bx", bucket);
-    FILE *output = fopen(filename, "wb");
+    if (stat(filename, &existing) < 0) {
+        if (errno == ENOENT) {
+            if (append && args->verbose_level >= VINTERACTIVE) {
+                fprintf(stderr, "Notice: Append will create bucket\n");
+            }
+        } else {
+            perror("Checking whether bucket exists");
+        }
+    }
+    if (existing.st_size > 0) {
+        // XXX Something more harsh like failing?
+        if (!append && args->verbose_level >= VINTERACTIVE) {
+            fprintf(stderr, "Notice: Store will overwrite bucket\n");
+        }
+    } else if (append && args->verbose_level >= VWARN && S_ISREG(existing.st_mode)) {
+        fprintf(stderr, "Notice: Appending to empty bucket\n");
+    }
+    FILE *output = fopen(filename, append ? "ab" : "w+b");
     // XXX Check if it already exists!
     if (!output) {
         error(ESPURIOUS, errno, "Opening bucket for writing");
@@ -333,6 +354,15 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
     size_t accumulated_length = 0;
     int segment_ordinal = 1;
     int segment_entries = 0;
+    if (append) {
+        size_t position = ftell(output);
+        size_t rest = DEFAULT_SEGMENT_SIZE - (position % DEFAULT_SEGMENT_SIZE);
+        if (rest < DEFAULT_HEADER_SIZE * 2) {
+            assert(rest == write_segment_padding(output, rest));
+        } else if (rest < DEFAULT_SEGMENT_SIZE) {
+            flush_limit = rest - DEFAULT_HEADER_SIZE;
+        }
+    }
     while ((line = read_bucket_line(input, &line_length, args))) {
         if (bucket_line_is_header(line)) {
             // XXX ignore them for now
@@ -340,12 +370,13 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
         }
         if (accumulated_length + line_length > flush_limit) {
             assert(cache_head != NULL);
-            write_segment_to_bucket(output, bucket, cache_head,
+            write_segment_to_bucket(output, bucket, cache_head, flush_limit + DEFAULT_HEADER_SIZE,
                     segment_ordinal++, segment_entries, MIDDLE, args);
             segment_entries = 0;
             accumulated_length = 0;
             cache_head = NULL;
             cache_tail = NULL;
+            flush_limit = DEFAULT_SEGMENT_SIZE - DEFAULT_HEADER_SIZE;
         }
         accumulated_length += line_length;
         cache_tail = string_list_append(cache_tail, line);
@@ -355,7 +386,7 @@ void store_bucket(FILE *input, char *bucket, arguments *args) {
         }
     }
     if (cache_head) {
-        write_segment_to_bucket(output, bucket, cache_head,
+        write_segment_to_bucket(output, bucket, cache_head, /* Should not be used */ -1,
                 segment_ordinal, segment_entries, segment_ordinal == 1 ? ONLY : LAST, args);
     }
     if (fclose(output) != 0) {
@@ -379,7 +410,9 @@ int main(int argc, char **argv) {
     } else if (args->operation == CAT) {
         cat_bucket(args->bucket, stdout, args);
     } else if (args->operation == STORE) {
-        store_bucket(stdin, args->bucket, args);
+        store_bucket(stdin, args->bucket, false, args);
+    } else if (args->operation == APPEND) {
+        store_bucket(stdin, args->bucket, true, args);
     }
     free(args);
 }

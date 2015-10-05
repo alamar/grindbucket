@@ -9,5 +9,5 @@ extern size_t write_segment_int_header(FILE *output, char *name, long long num_v
 
 extern size_t write_segment_padding(FILE *output, int length);
 
-extern void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
+extern void write_segment_to_bucket(FILE *output, char *bucket, string_list *data, size_t flush_limit,
         int segment_ordinal, int segment_entries, segment_position spos, arguments *args);

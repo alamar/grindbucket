@@ -10,8 +10,12 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <sys/stat.h>
 #include <sys/types.h>
+
 #include <dirent.h>
+
+#include <unistd.h>
 
 #define DEFAULT_HEADER_SIZE 4096
 #define DEFAULT_SEGMENT_SIZE (1024 * 1024)
@@ -36,9 +40,10 @@
 
 enum operation {
     NOP = 0,
-    LIST = 10,
-    CAT = 20,
-    STORE = 30
+    LIST = 100,
+    CAT = 200,
+    STORE = 300,
+    APPEND = 350
 };
 
 typedef enum {

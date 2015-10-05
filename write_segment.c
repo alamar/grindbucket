@@ -65,8 +65,8 @@ char *format_fields_header(string_list *fields) {
     return line_of_fields;
 }
 
-void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
-        int segment_ordinal, int segment_entries, segment_position spos, arguments *args)
+void write_segment_to_bucket(FILE* output, char* bucket, string_list* data, size_t segment_length,
+        int segment_ordinal, int segment_entries, segment_position spos, arguments* args)
 {
     size_t written = 0;
 
@@ -77,7 +77,7 @@ void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
         written += write_segment_int_header(output, "Segment-Ordinal", segment_ordinal);
     }
     if (spos == MIDDLE) {
-        written += write_segment_int_header(output, "Segment-Length", DEFAULT_SEGMENT_SIZE);
+        written += write_segment_int_header(output, "Segment-Length", segment_length);
     }
     if (args->fields) {
         written += write_segment_line(output, "#Fields");
@@ -93,8 +93,8 @@ void write_segment_to_bucket(FILE *output, char *bucket, string_list *data,
         written += write_segment_line(output, data->string);
     }
     if (spos == MIDDLE) {
-        assert(written <= DEFAULT_SEGMENT_SIZE);
-        written += write_segment_padding(output, DEFAULT_SEGMENT_SIZE - written);
-        assert(written == DEFAULT_SEGMENT_SIZE);
+        assert(written <= segment_length);
+        written += write_segment_padding(output, segment_length - written);
+        assert(written == segment_length);
     }
 }
