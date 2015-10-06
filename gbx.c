@@ -227,7 +227,7 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
             fprintf(stderr, "Notice: Appending to empty bucket\n");
         }
     }
-    FILE *output = fopen(filename, append ? "ab" : "w+b");
+    FILE *output = fopen(filename, append ? "r+b": "w+b");
     // XXX Check if it already exists!
     if (!output) {
         error(ESPURIOUS, errno, "Opening bucket for writing");
@@ -236,7 +236,14 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
     size_t line_length = 0;
     size_t accumulated_length = 0;
     int64_t total_entries = 0;
+    segment_header header;
     if (append) {
+        parse_bucket_header(output, 0, &header, args);
+        total_entries = header.entries;
+        header.segment_ordinal++;
+        // XXX check fields
+
+        fseek(output, 0, SEEK_END);
         size_t position = ftell(output);
         size_t rest = DEFAULT_SEGMENT_SIZE - (position % DEFAULT_SEGMENT_SIZE);
         if (rest < DEFAULT_HEADER_SIZE * 2) {
@@ -244,20 +251,19 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
         } else if (rest < DEFAULT_SEGMENT_SIZE) {
             flush_limit = rest - DEFAULT_HEADER_SIZE;
         }
+    } else {
+        header.lines = NULL;
+
+        header.name = bucket;
+        header.comment = NULL;
+        header.created = NULL;
+        header.fields = args->fields;
+        header.segment_ordinal = 1;
     }
-
-    segment_header header;
-    header.lines = NULL;
-
-    header.name = bucket;
-    header.comment = NULL;
-    header.created = NULL;
-    header.fields = args->fields;
-    header.segments = 1;
     header.segment_entries = 0;
     header.segment_length = 0;
-    header.segment_ordinal = 1;
     header.entries = 0;
+    header.segments = 1;
 
     while ((line = read_bucket_line(input, &line_length, args))) {
         if (bucket_line_is_header(line)) {
