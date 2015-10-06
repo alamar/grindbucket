@@ -98,4 +98,6 @@ extern char *empty_string;
 
 #include "identifier.h"
 
+#include "read_bucket.h"
+
 #include "write_segment.h"

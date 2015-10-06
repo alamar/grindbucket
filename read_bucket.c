@@ -67,9 +67,9 @@ bool bucket_line_is_header(char *line) {
     return *line == '#';
 }
 
-string_list *read_header_lines(FILE *stream, off_t offset, arguments *args) {
+string_list *read_header_lines(FILE *stream, off_t offset, size_t *header_size, arguments *args) {
     int header_lines_found = 0;
-    off_t header_size = 0;
+    *header_size = 0;
     string_list *header_head = NULL;
     string_list *header = NULL;
     bool found_data = false;
@@ -88,9 +88,7 @@ string_list *read_header_lines(FILE *stream, off_t offset, arguments *args) {
             if (line[0] == '#' && line[1] == '#' && line[2] == '\0') {
                 // Technical "start of segment" mark
                 free(line);
-                continue;
-            }
-            if (bucket_line_is_blank(line) || bucket_line_is_header(line)) {
+            } else if (bucket_line_is_blank(line) || bucket_line_is_header(line)) {
                 header = string_list_append(header, line);
                 if (!header_head) {
                     header_head = header;
@@ -101,10 +99,10 @@ string_list *read_header_lines(FILE *stream, off_t offset, arguments *args) {
                 free(line);
                 break;
             }
-            header_size += header_line_length;
+            *header_size += header_line_length;
         }
     } while (line != NULL);
-    if (args->verbose_level >= VWARN && header_size > EXPECTED_HEADER_SIZE) {
+    if (args->verbose_level >= VWARN && *header_size > EXPECTED_HEADER_SIZE) {
         fprintf(stderr, "Warning: header size larger than expected: %lld\n", (long long int) header_size);
     }
     if (args->verbose_level >= VWARN && header_lines_found >= EXPECTED_HEADER_LINES) {
@@ -164,8 +162,9 @@ void parse_header_line(char *line, header_line *output) {
 }
 
 // XXX This should be test covered HEAVILY
-void parse_bucket_header(FILE *stream, off_t offset, segment_header *result, arguments *args) {
-    string_list *headers = read_header_lines(stream, offset, args);
+size_t parse_bucket_header(FILE *stream, off_t offset, segment_header *result, arguments *args) {
+    size_t header_size;
+    string_list *headers = read_header_lines(stream, offset, &header_size, args);
     header_line *header;
     header_lines_list *tail = NULL;
 
@@ -303,6 +302,7 @@ void parse_bucket_header(FILE *stream, off_t offset, segment_header *result, arg
             }
         }
     }
+    return header_size;
 }
 
 void cleanup_segment_header(segment_header *header) {
