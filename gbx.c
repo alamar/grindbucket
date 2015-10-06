@@ -172,6 +172,11 @@ string_list *read_header_lines(FILE *stream, off_t offset, arguments *args) {
         size_t header_line_length;
         line = read_bucket_line(stream, &header_line_length, args);
         if (line) {
+            if (line[0] == '#' && line[1] == '#' && line[2] == '\0') {
+                // Technical "start of segment" mark
+                free(line);
+                continue;
+            }
             if (bucket_line_is_blank(line) || bucket_line_is_header(line)) {
                 header = string_list_append(header, line);
                 if (!header_head) {
@@ -199,17 +204,28 @@ string_list *read_header_lines(FILE *stream, off_t offset, arguments *args) {
 }
 
 // Will mangle *line and return its bits in header_line
+// If header is multiline, call twice on same header_line
 void parse_header_line(char *line, header_line *output) {
-    assert(line[0] == '#');
-    if (output->kind == MULTILINE && output->name != NULL && output->value == NULL &&
-            line[1] == ' ')
-    {
-        output->value = line + 2;
+    if (output->kind == MULTILINE && output->value == NULL) {
+        assert(output->name != NULL);
+        assert(output->raw != NULL);
+        if (line && line[1] == ' ') {
+            output->value = line + 2;
+        } else {
+            output->kind = COMMENT;
+        }
+        output->raw_second_line = line;
         return;
-    } else {
-        output->kind = COMMENT;
-        output->name = empty_string;
-        output->value = line + 1;
+    }
+    output->kind = COMMENT;
+    output->name = empty_string;
+    output->value = empty_string;
+    output->raw = line;
+    output->raw_second_line = NULL;
+    if (line[0] != '#') {
+        assert(bucket_line_is_blank(line));
+        output->kind = BLANK;
+        return;
     }
 
     if (line[1] < 'A' || line[1] > 'Z' || line[2] == '\0') {
@@ -234,10 +250,13 @@ void parse_header_line(char *line, header_line *output) {
     output->value = NULL;
 }
 
-void parse_bucket_header(char *filename, segment_header *result, arguments *args) {
-    FILE *stream = fopen(filename, "rb");
-    string_list *headers = read_header_lines(stream, 0, args);
-    header_line header;
+// XXX This should be test covered HEAVILY
+void parse_bucket_header(FILE *stream, off_t offset, segment_header *result, arguments *args) {
+    string_list *headers = read_header_lines(stream, offset, args);
+    header_line *header;
+    header_lines_list *tail = NULL;
+
+    result->lines = NULL;
 
     result->name = NULL;
     result->created = NULL;
@@ -246,88 +265,129 @@ void parse_bucket_header(char *filename, segment_header *result, arguments *args
     result->entries = 0;
     result->segments = 1;
     result->segment_length = 0;
+    result->segment_entries = 0;
+    result->segment_ordinal = 0;
 
     long long int tmp = 0;
 
     while (headers) {
-        parse_header_line(headers->string, &header);
-        if (header.kind == MULTILINE && headers->next) {
-            parse_header_line(headers->next->string, &header);
+        header = malloc(sizeof(header_line));
+        parse_header_line(headers->string, header);
+        string_list *next = headers->next;
+        free(headers);
+        headers = next;
+        if (header->kind == MULTILINE) {
+            parse_header_line(headers ? headers->string : NULL, header);
+            if (headers) {
+                next = headers->next;
+                free(headers);
+                headers = next;
+            }
         }
-        if (strcmp("Name", header.name) == 0) {
+
+        header_lines_list *new_tail = malloc(sizeof(header_lines_list));
+        if (!tail) {
+            result->lines = tail;
+        } else {
+            tail->next = new_tail;
+        }
+        tail = new_tail;
+        tail->line = header;
+
+        if (header->kind == COMMENT || header->kind == BLANK) {
+            continue;
+        }
+        if (strcmp("Name", header->name) == 0) {
             if (result->name != NULL) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: name specified more than once\n");
                 }
             } else {
-                result->name = extract_identifier(header.value, ID_EOL, "bucket", args->verbose_level);
+                result->name = extract_identifier(header->value, ID_EOL, "bucket", args->verbose_level);
             }
         }
-        if (strcmp("Comment", header.name) == 0) {
+        if (strcmp("Comment", header->name) == 0) {
             if (result->comment != NULL) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: comment specified more than once\n");
                 }
             } else {
-                result->comment = strdup(header.value);
+                result->comment = strdup(header->value);
             }
         }
-        if (strcmp("Fields", header.name) == 0) {
+        if (strcmp("Fields", header->name) == 0) {
             if (result->fields != NULL) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: field names specified more than once\n");
                 }
             } else {
-                result->fields = parse_argument_fields(header.value, "\t");
+                result->fields = parse_argument_fields(header->value, "\t");
             }
         }
-        if (strcmp("Created", header.name) == 0) {
+        if (strcmp("Created", header->name) == 0) {
             if (result->created != NULL) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: creation date-time specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                result->created = strdup(header.value);
+                result->created = strdup(header->value);
             }
         }
-        if (strcmp("Segments", header.name) == 0) {
+        if (strcmp("Segments", header->name) == 0) {
             if (result->segments != 1) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: segments count specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                sscanf(header.value, "%lld", &tmp);
+                sscanf(header->value, "%lld", &tmp);
                 result->segments = tmp;
             }
         }
-        if (strcmp("Entries", header.name) == 0) {
+        if (strcmp("Entries", header->name) == 0) {
             if (result->entries != 0) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: entries count specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                sscanf(header.value, "%lld", &tmp);
+                sscanf(header->value, "%lld", &tmp);
                 result->entries = tmp;
             }
         }
-        if (strcmp("Segment-Length", header.name) == 0) {
+        if (strcmp("Segment-Length", header->name) == 0) {
             if (result->segment_length != 0) {
                 if (args->verbose_level >= VWARN) {
                     fprintf(stderr, "Warning: segment length specified more than once\n");
                 }
             } else {
                 // XXX Add validation!
-                sscanf(header.value, "%lld", &tmp);
+                sscanf(header->value, "%lld", &tmp);
                 result->segment_length = tmp;
             }
         }
-        headers = string_list_consume(headers);
-        if (headers && header.kind == MULTILINE) {
-            // XXX Only support one line for multiline comments :)
-            headers = string_list_consume(headers);
+        if (strcmp("Segment-Entries", header->name) == 0) {
+            if (result->segment_entries != 0) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: segment entries count specified more than once\n");
+                }
+            } else {
+                // XXX Add validation!
+                sscanf(header->value, "%lld", &tmp);
+                result->segment_entries = tmp;
+            }
+        }
+        if (strcmp("Segment-Ordinal", header->name) == 0) {
+            if (result->segment_ordinal != 0) {
+                if (args->verbose_level >= VWARN) {
+                    fprintf(stderr, "Warning: segment ordinal specified more than once\n");
+                }
+            } else {
+                // XXX Add validation!
+                sscanf(header->value, "%lld", &tmp);
+                result->segment_ordinal = tmp;
+            }
         }
     }
 }
@@ -337,6 +397,20 @@ void cleanup_segment_header(segment_header *header) {
      free(header->created);
      free(header->comment);
      string_list_discard(header->fields);
+     if (!header->lines) {
+         return;
+     }
+     header_lines_list *tail = header->lines;
+     do {
+         header_line *line = tail->line;
+         free(line->raw);
+         if (line->raw_second_line) {
+             free(line->raw_second_line);
+         }
+         header_lines_list *next = tail->next;
+         free(tail);
+         tail = next;
+     } while (tail);
 }
 
 void ellipsis_terminate(char *tail) {
@@ -411,10 +485,18 @@ void enumerate_buckets(arguments *args) {
                 if (!found && args->verbose_level >= VINTERACTIVE) {
                     printf(" Name\t\t\tCreated     Entries\tFields\t\t\t\t\tComment\n");
                 }
-                parse_bucket_header(filename, &header, args);
+                FILE *stream = fopen(filename, "rb");
+                if (!stream) {
+                    perror("Opening file for enumerating");
+                    continue;
+                }
+                parse_bucket_header(stream, 0, &header, args);
                 print_bucket_info(&header, filename);
                 cleanup_segment_header(&header);
                 found = true;
+                if (fclose(stream) != 0) {
+                    perror("Closing file after enumerating");
+                }
             }
         }
     } while (entry);
@@ -460,14 +542,15 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
         } else {
             perror("Checking whether bucket exists");
         }
-    }
-    if (existing.st_size > 0) {
-        // XXX Something more harsh like failing?
-        if (!append && args->verbose_level >= VINTERACTIVE) {
-            fprintf(stderr, "Notice: Store will overwrite bucket\n");
+    } else {
+        if (existing.st_size > 0) {
+            // XXX Something more harsh like failing?
+            if (!append && args->verbose_level >= VINTERACTIVE) {
+                fprintf(stderr, "Notice: Store will overwrite bucket\n");
+            }
+        } else if (append && args->verbose_level >= VWARN && S_ISREG(existing.st_mode)) {
+            fprintf(stderr, "Notice: Appending to empty bucket\n");
         }
-    } else if (append && args->verbose_level >= VWARN && S_ISREG(existing.st_mode)) {
-        fprintf(stderr, "Notice: Appending to empty bucket\n");
     }
     FILE *output = fopen(filename, append ? "ab" : "w+b");
     // XXX Check if it already exists!
@@ -477,8 +560,7 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
     char *line;
     size_t line_length = 0;
     size_t accumulated_length = 0;
-    int segment_ordinal = 1;
-    int segment_entries = 0;
+    int64_t total_entries = 0;
     if (append) {
         size_t position = ftell(output);
         size_t rest = DEFAULT_SEGMENT_SIZE - (position % DEFAULT_SEGMENT_SIZE);
@@ -488,6 +570,20 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
             flush_limit = rest - DEFAULT_HEADER_SIZE;
         }
     }
+
+    segment_header header;
+    header.lines = NULL;
+
+    header.name = bucket;
+    header.comment = NULL;
+    header.created = NULL;
+    header.fields = args->fields;
+    header.segments = 1;
+    header.segment_entries = 0;
+    header.segment_length = 0;
+    header.segment_ordinal = 1;
+    header.entries = 0;
+
     while ((line = read_bucket_line(input, &line_length, args))) {
         if (bucket_line_is_header(line)) {
             // XXX ignore them for now
@@ -495,9 +591,10 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
         }
         if (accumulated_length + line_length > flush_limit) {
             assert(cache_head != NULL);
-            write_segment_to_bucket(output, bucket, cache_head, flush_limit + DEFAULT_HEADER_SIZE,
-                    segment_ordinal++, segment_entries, MIDDLE, args);
-            segment_entries = 0;
+            write_segment_to_bucket(output, header, cache_head,
+                    flush_limit + DEFAULT_HEADER_SIZE, MIDDLE, args);
+            header.segment_entries = 0;
+            header.segment_ordinal++;
             accumulated_length = 0;
             cache_head = NULL;
             cache_tail = NULL;
@@ -505,14 +602,40 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
         }
         accumulated_length += line_length;
         cache_tail = string_list_append(cache_tail, line);
-        segment_entries++;
+        header.segment_entries++;
+        total_entries++;
         if (!cache_head) {
             cache_head = cache_tail;
         }
     }
     if (cache_head) {
-        write_segment_to_bucket(output, bucket, cache_head, /* Should not be used */ -1,
-                segment_ordinal, segment_entries, segment_ordinal == 1 ? ONLY : LAST, args);
+        write_segment_to_bucket(output, header, cache_head, /* Should not be used */ -1, LAST, args);
+    }
+
+    if (header.segment_ordinal > 1) {
+        segment_header first_header;
+        parse_bucket_header(output, 0, &first_header, args);
+        bool problem = false;
+        if (first_header.entries > total_entries) {
+            if (args->verbose_level >= VINTERACTIVE) {
+                fprintf(stderr, "Warning: header declares more entries than accounted for\n");
+            }
+            problem = true;
+        } else {
+            first_header.entries = total_entries;
+        }
+        if (first_header.segments > header.segment_ordinal) {
+            if (args->verbose_level >= VINTERACTIVE) {
+                fprintf(stderr, "Warning: header declares more segments than accounted for\n");
+            }
+            problem = true;
+        } else {
+            first_header.segments = header.segment_ordinal;
+        }
+        if (!problem) {
+            write_header_for_segment(output, 0, DEFAULT_HEADER_SIZE, first_header);
+        }
+        cleanup_segment_header(&first_header);
     }
     if (fclose(output) != 0) {
         error(ESPURIOUS, errno, "Problem closing bucket after writing");

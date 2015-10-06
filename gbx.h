@@ -47,7 +47,6 @@ enum operation {
 };
 
 typedef enum {
-    ONLY = 0,
     MIDDLE = 1,
     LAST = 2
 } segment_position;
@@ -55,7 +54,8 @@ typedef enum {
 typedef enum {
     ONE_LINE,
     MULTILINE,
-    COMMENT
+    COMMENT,
+    BLANK
 } header_kind;
 
 typedef struct {
@@ -67,20 +67,32 @@ typedef struct {
 } arguments;
 
 typedef struct {
+    header_kind kind;
+    char *name;
+    char *value;
+
+    char *raw;
+    char *raw_second_line;
+} header_line;
+
+typedef struct header_lines_list_struct {
+    struct header_lines_list_struct *next;
+    header_line *line;
+} header_lines_list;
+
+typedef struct {
+    header_lines_list *lines;
+
     char *name;
     char *created;
     char *comment;
     string_list *fields;
     int64_t entries;
+    int64_t segment_entries;
+    int64_t segment_ordinal;
     int64_t segments;
     int64_t segment_length;
 } segment_header;
-
-typedef struct {
-    header_kind kind;
-    char *name;
-    char *value;
-} header_line;
 
 extern char *empty_string;
 
