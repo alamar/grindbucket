@@ -350,29 +350,33 @@ void forklift(char **feeder, char **eater) {
     if (eater_pid == -1) {
         error(ESPURIOUS, errno, "Problem forking eater");
     }
-    if (eater_pid) {
-        waitpid(eater_pid, NULL, 0);
+    if (!eater_pid) {
+        fclose(stdin);
+        if (dup2(pipe_rw[0], STDIN_FILENO) == -1 || close(pipe_rw[1]) == -1) {
+            error(ESPURIOUS, errno, "Problem setting up read pipe");
+        }
+        execv(eater[0], eater);
+        error(ENAUGHTY, errno, "Problem executing eater");
+        // Just to be extra sure :)
         return;
     }
 
-    fclose(stdin);
-    if (dup2(pipe_rw[0], STDIN_FILENO) == -1) {
-        error(ESPURIOUS, errno, "Problem setting up read pipe");
-    }
     feeder_pid = fork();
     if (feeder_pid == -1) {
         error(ESPURIOUS, errno, "Problem forking feeder");
     }
-    if (feeder_pid) {
-        execv(eater[0], eater);
-        error(ENAUGHTY, errno, "Problem executing eater");
+    if (!feeder_pid) {
+        fclose(stdout);
+        if (dup2(pipe_rw[1], STDOUT_FILENO) == -1 || close(pipe_rw[0]) == -1) {
+            error(ESPURIOUS, errno, "Problem setting up write pipe");
+        }
+        execv(feeder[0], feeder);
+        error(ENAUGHTY, errno, "Problem executing feeder");
     }
-    fclose(stdout);
-    if (dup2(pipe_rw[1], STDOUT_FILENO) == -1) {
-        error(ESPURIOUS, errno, "Problem setting up write pipe");
-    }
-    execv(feeder[0], feeder);
-    error(ENAUGHTY, errno, "Problem executing feeder");
+
+    close(pipe_rw[0]);
+    close(pipe_rw[1]);
+    waitpid(eater_pid, NULL, 0);
 }
 
 int main(int argc, char **argv) {
