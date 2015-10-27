@@ -12,6 +12,7 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 
 #include <dirent.h>
 
@@ -23,6 +24,7 @@
 #define ESPURIOUS 120
 #define ECMDLINE 1
 #define ENOTFOUND 2
+#define ENAUGHTY 3
 
 #define EXPECTED_LINE_LENGTH 1024
 #define EXPECTED_HEADER_SIZE DEFAULT_HEADER_SIZE
@@ -43,7 +45,8 @@ enum operation {
     LIST = 100,
     CAT = 200,
     STORE = 300,
-    APPEND = 350
+    APPEND = 350,
+    SORT = 400
 };
 
 typedef enum {

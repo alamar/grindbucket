@@ -4,6 +4,7 @@ char *empty_string = "";
 
 bool parse_arguments(arguments *args, int argc, char **argv) {
     bool seen_operation = false;
+    bool need_bucket = true;
     bool seen_bucket = false;
     bool fail = false;
 
@@ -27,6 +28,7 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
                 } else if (arg[pos] == 'v') {
                     args->verbose_level++;
                 } else if (arg[pos] == 'F') {
+                    // We accept fields for all operations, why?
                     if (pos + 1 == len && (i + 1 < argc)) {
                         args->fields = parse_fields(argv[++i], ",");
                     } else if (pos + 1 < len) {
@@ -48,6 +50,7 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
             if (strcmp(arg, "list") == 0) {
                 seen_operation = true;
                 args->operation = LIST;
+                need_bucket = false;
             } else if (strcmp(arg, "cat") == 0) {
                 seen_operation = true;
                 args->operation = CAT;
@@ -57,8 +60,11 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
             } else if (strcmp(arg, "append") == 0) {
                 seen_operation = true;
                 args->operation = APPEND;
+            } else if (strcmp(arg, "sort") == 0) {
+                seen_operation = true;
+                args->operation = SORT;
             } else {
-                if (seen_operation && (args->operation == CAT || args->operation == STORE || args->operation == APPEND)) {
+                if (seen_operation && need_bucket) {
                     char *bucket = extract_identifier(arg, ID_EOL, "bucket", VERROR);
                     if (bucket != NULL) {
                         seen_bucket = true;
@@ -77,7 +83,7 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
     if (!seen_operation) {
         fprintf(stderr, "No operation specified!\n");
         fail = true;
-    } else if (!seen_bucket && (args->operation == CAT || args->operation == STORE)) {
+    } else if (need_bucket && !seen_bucket) {
         fprintf(stderr, "No bucket name specified!\n");
         fail = true;
     }
@@ -85,7 +91,10 @@ bool parse_arguments(arguments *args, int argc, char **argv) {
 }
 
 void print_usage(FILE *stream) {
-    fprintf(stream, "USAGE: gbx [-v] {list|cat bucket|store bucket}\n");
+    fprintf(stream, "USAGE: gbx [-v] list\n");
+    fprintf(stream, "USAGE: gbx [-v] cat bucket\n");
+    fprintf(stream, "USAGE: gbx [-v] store|append [-Ffield,field,field] bucket\n");
+    fprintf(stream, "USAGE: gbx [-v] sort bucket\n");
 }
 
 void ellipsis_terminate(char *tail) {
@@ -330,6 +339,42 @@ void store_bucket(FILE *input, char *bucket, bool append, arguments *args) {
     free(filename);
 }
 
+void forklift(char **feeder, char **eater) {
+    pid_t feeder_pid = 0, eater_pid = 0;
+    int pipe_rw[2];
+    if (pipe(pipe_rw) == -1) {
+        error(ESPURIOUS, errno, "Problem creating pipe");
+    }
+
+    eater_pid = fork();
+    if (eater_pid == -1) {
+        error(ESPURIOUS, errno, "Problem forking eater");
+    }
+    if (eater_pid) {
+        waitpid(eater_pid, NULL, 0);
+        return;
+    }
+
+    fclose(stdin);
+    if (dup2(pipe_rw[0], STDIN_FILENO) == -1) {
+        error(ESPURIOUS, errno, "Problem setting up read pipe");
+    }
+    feeder_pid = fork();
+    if (feeder_pid == -1) {
+        error(ESPURIOUS, errno, "Problem forking feeder");
+    }
+    if (feeder_pid) {
+        execv(eater[0], eater);
+        error(ENAUGHTY, errno, "Problem executing eater");
+    }
+    fclose(stdout);
+    if (dup2(pipe_rw[1], STDOUT_FILENO) == -1) {
+        error(ESPURIOUS, errno, "Problem setting up write pipe");
+    }
+    execv(feeder[0], feeder);
+    error(ENAUGHTY, errno, "Problem executing feeder");
+}
+
 int main(int argc, char **argv) {
     arguments *args = malloc(sizeof(arguments));
     if (!parse_arguments(args, argc, argv)) {
@@ -348,6 +393,10 @@ int main(int argc, char **argv) {
         store_bucket(stdin, args->bucket, false, args);
     } else if (args->operation == APPEND) {
         store_bucket(stdin, args->bucket, true, args);
+    } else if (args->operation == SORT) {
+        char *cat[] = {argv[0], "cat", args->bucket, NULL};
+        char *sort[] = {"/usr/bin/sort", "-k1,1", "-t\t", NULL};
+        forklift(cat, sort);
     }
     free(args);
 }
